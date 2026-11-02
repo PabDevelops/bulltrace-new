@@ -4,7 +4,8 @@ import Link from 'next/link';
 import StockLogo from '../components/workspace/StockLogo';
 import MarketStatusDot from '../components/workspace/MarketStatusDot';
 import { formatCurrency } from '../../lib/formatters';
-import { computeEasyMode } from '../../lib/stockScoring';
+import { computeEasyMode, computeFundamentalGrowth } from '../../lib/stockScoring';
+import { useEntryPriceProjection } from '../../lib/hooks/useEntryPriceProjection';
 
 // Translates the existing CBS/OPPO/GQS quality score into a plain yes/maybe/no verdict,
 // separating "is this a good business" (score100) from "is it a good price right now"
@@ -78,6 +79,39 @@ function SuggestionRow({ s, onPick }) {
       </div>
       {s.isEtf && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--ws-text-2)', border: '1px solid var(--ws-border)', borderRadius: '10px', padding: '2px 8px' }}>ETF</span>}
     </button>
+  );
+}
+
+// Phil Town-style sticker price: reuses the same Monte Carlo projector the real stock page's
+// Price Projection section charts, fixed to a 5-year horizon, to answer "what would I pay
+// today for a 15%/yr return" and "what return does the median path actually imply" — two
+// concrete numbers for someone deciding whether a tip is still worth acting on at today's
+// price, without building a second scoring system next to the verdict above.
+function EntryPriceStat({ ticker, data }) {
+  const fundamentalGrowth = computeFundamentalGrowth(data);
+  const { maxEntryPrice, cagr5y } = useEntryPriceProjection({
+    ticker, price: data.currentPrice, beta: data.beta, riskFreeRate: data.riskFreeRate,
+    analystTarget: data.analystTarget, fundamentalGrowth,
+  });
+
+  if (maxEntryPrice == null || cagr5y == null) return null;
+  const sym = data.currency === 'EUR' ? '€' : data.currency === 'GBP' ? '£' : '$';
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--ws-border)' }}>
+      <div>
+        <div style={{ fontSize: '10px', color: 'var(--ws-text-3)', fontWeight: 700 }}>PRECIO MÁXIMO DE ENTRADA</div>
+        <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--ws-text)', marginTop: '2px' }}>{formatCurrency(maxEntryPrice, sym)}</div>
+        <div style={{ fontSize: '10px', color: 'var(--ws-text-3)', marginTop: '2px' }}>para exigir un 15%/año</div>
+      </div>
+      <div>
+        <div style={{ fontSize: '10px', color: 'var(--ws-text-3)', fontWeight: 700 }}>CAGR ESPERADO A 5 AÑOS</div>
+        <div style={{ fontSize: '15px', fontWeight: 700, color: cagr5y >= 0 ? 'var(--ws-accent)' : 'var(--ws-red)', marginTop: '2px' }}>
+          {cagr5y >= 0 ? '+' : ''}{(cagr5y * 100).toFixed(1)}%
+        </div>
+        <div style={{ fontSize: '10px', color: 'var(--ws-text-3)', marginTop: '2px' }}>al precio actual</div>
+      </div>
+    </div>
   );
 }
 
@@ -248,6 +282,10 @@ export default function StartPage() {
               <div style={{ fontSize: '13px', color: 'var(--ws-text-2)' }}>
                 Todavía no tenemos datos suficientes de esta empresa para dar un veredicto — solo el precio.
               </div>
+            )}
+
+            {result.verdict && !result.fund && (
+              <EntryPriceStat ticker={picked?.ticker} data={result.data} />
             )}
 
             <div style={{ fontSize: '11px', color: 'var(--ws-text-3)', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--ws-border)' }}>

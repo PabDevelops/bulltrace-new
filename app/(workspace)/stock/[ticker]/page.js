@@ -20,6 +20,7 @@ import { buildEarningsCalendarUrl } from '../../../../lib/googleCalendar';
 import { fmt as sharedFmt, fmtP as sharedFmtP, fmtN as sharedFmtN, formatCurrency, formatTimeAgo } from '../../../../lib/formatters';
 import { useStockData } from '../../../../lib/hooks/useStockData';
 import { useTickerSearch } from '../../../../lib/hooks/useTickerSearch';
+import { useEntryPriceProjection } from '../../../../lib/hooks/useEntryPriceProjection';
 import {
   getDimScore as sharedGetDimScore,
   totalScore as sharedTotalScore,
@@ -476,6 +477,17 @@ function StockPageContent({ params }) {
   const [loadingEvent, setLoadingEvent] = useState(true);
   const { isSignedIn, user, isLoaded } = useUser();
   const [showAddHolding, setShowAddHolding] = useState(false);
+  // Phil Town-style sticker price: reuses the same Monte Carlo projector ProjectionChart
+  // charts further down, fixed to a 5-year horizon, to answer "what would I pay today for a
+  // 15%/yr return" and "what return does the median path actually imply" — without building
+  // a second valuation model alongside relativeValue/fairValue below. Called here, ahead of
+  // the loading/error early returns below, since it's a hook — guarded with `data?.` since
+  // `data` is still null on the first render(s).
+  const entryProjection = useEntryPriceProjection({
+    ticker, price: data?.currentPrice ?? null, beta: data?.beta ?? null,
+    riskFreeRate: data?.riskFreeRate, analystTarget: data?.analystTarget,
+    fundamentalGrowth: data ? computeFundamentalGrowth(data) : null,
+  });
 
   useEffect(() => {
     fetch(`/api/earnings?ticker=${ticker}`, { cache: 'no-store' })
@@ -1199,6 +1211,31 @@ function StockPageContent({ params }) {
                                 </div>
                               );
                             })()}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sticker price, Phil Town-style: discounts the Price Projection
+                          section's own 5-year median path back to today at a fixed 15%/yr
+                          hurdle rate — a second lens on "what to pay", independent of the
+                          relative-value fair value above (same reasoning, different model). */}
+                      {entryProjection.maxEntryPrice != null && price != null && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1px', background: 'var(--ws-border)', marginBottom: '16px' }}>
+                          <div style={{ background: 'var(--ws-bg-2)', padding: '12px 8px', textAlign: 'center' }}>
+                            <div title="Precio máximo de entrada: lo que pagarías hoy por el precio mediano que proyecta el Monte Carlo a 5 años, para exigir un 15%/año de retorno."
+                              style={{ fontFamily: "'Inter', sans-serif", fontSize: '9px', letterSpacing: '1px', color: 'var(--ws-text-3)', fontWeight: 700, marginBottom: '6px' }}>
+                              MAX ENTRY (15%/YR)
+                            </div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--ws-text)' }}>{curSym(data.currency)}{entryProjection.maxEntryPrice.toFixed(2)}</div>
+                          </div>
+                          <div style={{ background: 'var(--ws-bg-2)', padding: '12px 8px', textAlign: 'center' }}>
+                            <div title="CAGR esperado a 5 años: el retorno anualizado implícito en ese mismo precio mediano proyectado, partiendo del precio actual."
+                              style={{ fontFamily: "'Inter', sans-serif", fontSize: '9px', letterSpacing: '1px', color: 'var(--ws-text-3)', fontWeight: 700, marginBottom: '6px' }}>
+                              5Y CAGR (EXPECTED)
+                            </div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: entryProjection.cagr5y >= 0 ? 'var(--ws-accent)' : 'var(--ws-red)' }}>
+                              {entryProjection.cagr5y >= 0 ? '+' : ''}{(entryProjection.cagr5y * 100).toFixed(1)}%
+                            </div>
                           </div>
                         </div>
                       )}

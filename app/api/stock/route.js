@@ -2071,18 +2071,18 @@ export async function GET(request) {
     // total across all classes (verified against real data: MNTN's tag returns a fixed 16.4M,
     // frozen at its 2025-05-22 IPO date across every filing since, while the real total across
     // its Class A/B share structure is ~73.9M — understating marketCap by ~4.5x). Finnhub's
-    // shareOutstanding and marketCapitalization are both independently sourced and, unlike the
-    // XBRL tag, describe the whole company; when the two agree with each other (marketCap / live
-    // price ≈ shareOutstanding) but imply a share count far above the XBRL figure, that's the
-    // single-class-tag problem rather than a real ~5x share count swing, so the Finnhub total is
-    // trusted over the partial XBRL one for this calc.
+    // shareOutstanding is independently sourced and, unlike the XBRL tag, describes the whole
+    // company, so a partial XBRL figure defers to it directly. (Previously this also required
+    // Finnhub's own marketCapitalization to agree with shareOutstanding first — but for the exact
+    // Up-C names this guard exists for, marketCapitalization can itself be computed off the same
+    // narrow single-class count, so that cross-check never agreed and the partial XBRL figure went
+    // uncorrected despite flagDataAnomaly below recording the gap: verified against real data,
+    // MNTN's 2026-11-02 anomaly log shows sec_xbrl 16.44M vs. finnhub_profile 74.8M, a 78% gap,
+    // with sharesOutstanding still cached at the wrong 16.44M.) Capped at 20x so a genuinely bad
+    // Finnhub figure (wrong currency/units) can't swamp a plausible XBRL one instead.
     const fhShareOutstanding = fhProfile?.shareOutstanding ? fhProfile.shareOutstanding * 1e6 : null;
-    const fhImpliedShares = (fhProfile?.marketCapitalization && currentPrice)
-      ? (fhProfile.marketCapitalization * 1e6) / currentPrice
-      : null;
-    const fhSharesSelfConsistent = fhImpliedShares != null && fhShareOutstanding != null
-      && Math.abs(fhImpliedShares - fhShareOutstanding) / fhShareOutstanding < 0.1;
-    const xbrlSharesLookPartial = fhSharesSelfConsistent && sharesValAdj != null && sharesValAdj < fhShareOutstanding / 2;
+    const xbrlSharesLookPartial = sharesValAdj != null && fhShareOutstanding != null
+      && sharesValAdj < fhShareOutstanding / 2 && fhShareOutstanding / sharesValAdj < 20;
     const sharesForCalc = (xbrlSharesLookPartial ? fhShareOutstanding : sharesValAdj) || sharesFinnhub;
     await flagDataAnomaly(ticker, 'sharesOutstanding', [
       { source: 'sec_xbrl', value: sharesValAdj },

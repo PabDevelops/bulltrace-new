@@ -45,3 +45,7 @@ next-env.d.ts
 .gemini/
 
 .aider*
+
+# scratch research notes/reports (not application code)
+/research_notes/
+/reports/

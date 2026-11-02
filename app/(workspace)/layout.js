@@ -1,0 +1,181 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import Sidebar from '../components/workspace/Sidebar';
+import PaywallModal from '../components/workspace/PaywallModal';
+import { useUser } from '../components/AuthProvider';
+
+// Routes reachable without an account (and without a Pro subscription) as
+// part of the anonymous-access exploration flow. Watchlist is included here
+// too — signed-out users get a session-only watchlist there, gated inside
+// the page itself, not at this layout level.
+const PUBLIC_ROUTES = ['/home', '/search', '/stock', '/screener', '/radar', '/calendar', '/watchlist'];
+
+function isPublicPath(path) {
+  return PUBLIC_ROUTES.some(r => path === r || path.startsWith(r + '/'));
+}
+
+function LoadingScreen() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ws-bg)', color: 'var(--ws-text-3)', fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>
+      Loading terminal…
+    </div>
+  );
+}
+
+export default function WorkspaceLayout({ children }) {
+  const { isSignedIn, isLoaded } = useUser();
+  const path = usePathname();
+  const router = useRouter();
+  const [access, setAccess] = useState('checking'); // checking | denied | granted
+  // Recomputed every render straight off the current path, instead of trusting the effect
+  // below to have already resolved `access` to 'granted' — the effect only re-runs on its
+  // own dependency changes, so a route that's public by construction shouldn't ever be able
+  // to render the loading screen or the paywall while waiting on auth/subscription state
+  // that a public route was never supposed to need.
+  const isPublic = isPublicPath(path);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [scanlines, setScanlines] = useState(false);
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('bulltrace_sidebar_collapsed') === 'true';
+    setSidebarCollapsed(saved);
+  }, []);
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('bulltrace_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (isPublicPath(path)) { setAccess('granted'); return; }
+    setAccess('checking');
+    if (!isSignedIn) { setAccess('denied'); return; }
+    let cancelled = false;
+    fetch('/api/subscription')
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setAccess(d.isPro ? 'granted' : 'denied'); })
+      .catch(() => { if (!cancelled) setAccess('denied'); });
+    return () => { cancelled = true; };
+  }, [isLoaded, isSignedIn, path]);
+
+  useEffect(() => {
+    const handleSettingsChanged = () => {
+      const savedAccent = localStorage.getItem('ws_accent_color');
+      if (savedAccent) {
+        document.documentElement.style.setProperty('--ws-accent', savedAccent);
+        const dim = savedAccent.startsWith('#')
+          ? `rgba(${parseInt(savedAccent.slice(1,3),16)}, ${parseInt(savedAccent.slice(3,5),16)}, ${parseInt(savedAccent.slice(5,7),16)}, 0.12)`
+          : savedAccent;
+        document.documentElement.style.setProperty('--ws-accent-dim', dim);
+      }
+
+      const savedSize = localStorage.getItem('ws_font_size') || 'normal';
+      const fs = savedSize === 'compact' ? '12px' : savedSize === 'large' ? '16px' : '14px';
+      document.documentElement.style.fontSize = fs;
+
+      const savedScan = localStorage.getItem('ws_scanlines') === 'true';
+      setScanlines(savedScan);
+    };
+
+    handleSettingsChanged();
+    window.addEventListener('ws-settings-changed', handleSettingsChanged);
+    return () => window.removeEventListener('ws-settings-changed', handleSettingsChanged);
+  }, []);
+
+  // Auto-close sidebar drawer when navigating
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [path]);
+
+  if (access === 'checking' && !isPublic) return <LoadingScreen />;
+
+  const closePaywall = () => router.push('/home');
+
+  return (
+    <div className="workspace" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative', '--ws-sidebar-width': sidebarCollapsed ? '68px' : '240px' }}>
+      {scanlines && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.12) 50%)',
+          backgroundSize: '100% 4px',
+          zIndex: 999999,
+          pointerEvents: 'none',
+          opacity: 0.85
+        }} />
+      )}
+      
+      {/* MOBILE TOP BAR (only visible < 1024px) */}
+      <div className="ws-mobile-header">
+        <button onClick={() => setSidebarOpen(true)} style={{
+          background: 'none',
+          border: 'none',
+          color: 'var(--ws-text)',
+          fontSize: '20px',
+          cursor: 'pointer',
+          padding: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          outline: 'none'
+        }}>
+          ☰
+        </button>
+        <img
+          src="/bulltrace-logos/lockup-cream.png"
+          alt="Bulltrace"
+          style={{ height: '14px', width: 'auto' }}
+        />
+        <div style={{ width: '28px' }} /> {/* spacer to balance layout */}
+      </div>
+
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* SIDEBAR SLOT */}
+        <div className={`ws-sidebar-slot ${sidebarOpen ? 'open' : ''}`}>
+          <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebarCollapse} />
+        </div>
+
+        {/* SIDEBAR BACKDROP */}
+        {sidebarOpen && (
+          <div onClick={() => setSidebarOpen(false)} style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(2px)',
+            zIndex: 9998
+          }} />
+        )}
+
+        {/* overflow-x: clip, not hidden — hidden establishes a scroll container (per the CSS
+            overflow spec, setting only overflow-x forces the other axis to auto), which becomes
+            the nearest scrolling ancestor for any descendant's position: sticky instead of the
+            real viewport, silently breaking it. Same reasoning as .workspace's own overflow-x in
+            globals.css. clip still clamps horizontal overflow without that side effect. */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', maxWidth: '100%', overflowX: 'clip' }}>
+          <main style={{ flex: 1, maxWidth: '100%', overflowX: 'clip' }}>{(access === 'granted' || isPublic) ? children : null}</main>
+        </div>
+      </div>
+
+      {access === 'denied' && !isPublic && (
+        <PaywallModal
+          eyebrow="BULLTRACE TERMINAL"
+          title="Subscribe to unlock the terminal"
+          description="The screener, portfolio tracker, full financials and the rest of the terminal are available with Bulltrace Pro — 14 days free to start."
+          ctaLabel="Start 14-day free trial"
+          ctaHref="/pricing"
+          onClose={closePaywall}
+        />
+      )}
+    </div>
+  );
+}

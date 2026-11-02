@@ -1,0 +1,1096 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+/* Maps the --ws-* custom properties below to utility classes (bg-ws-bg-1,
+   text-ws-text, border-ws-border, ...) used across the workspace. Written as
+   plain classes rather than Tailwind @theme tokens: @theme's build step was
+   folding `var(--ws-bg-1)` down to its light-mode literal at compile time,
+   so every one of these classes silently stopped tracking the .workspace.dark
+   override and rendered light-theme colors even with dark mode active. Plain
+   CSS keeps the var() reference live, resolved at the element's actual
+   position in the DOM the way the light/dark override needs. */
+.bg-ws-bg { background-color: var(--ws-bg); }
+.bg-ws-bg-1 { background-color: var(--ws-bg-1); }
+.bg-ws-bg-2 { background-color: var(--ws-bg-2); }
+.text-ws-text { color: var(--ws-text); }
+.text-ws-text-2 { color: var(--ws-text-2); }
+.text-ws-text-3 { color: var(--ws-text-3); }
+.border-ws-border { border-color: var(--ws-border); }
+.bg-ws-accent { background-color: var(--ws-accent); }
+.text-ws-accent { color: var(--ws-accent); }
+.border-ws-accent { border-color: var(--ws-accent); }
+.bg-ws-accent-dim { background-color: var(--ws-accent-dim); }
+.bg-ws-red { background-color: var(--ws-red); }
+.text-ws-red { color: var(--ws-red); }
+.border-ws-red { border-color: var(--ws-red); }
+
+:root {
+  /* Marketing theme — dark by default (Graphite/Acid Lime/Cloud White), matching
+     the workspace app so the landing and other public pages (about, blog, pricing,
+     privacy, terms) look like the same product, not a separate light site. */
+  --bg: #111111;
+  --bg-1: #1a1a1a;
+  --bg-2: #222222;
+  --bg-3: #2a2a2a;
+  --border: #2a2a2a;
+  --border-2: #383838;
+  --text: #F5F7F2;
+  --text-2: #b0b0a8;
+  --text-3: #75776d;
+  --accent: #C7FF38;
+  --accent-2: #C7FF38;
+  --accent-dim: rgba(199, 255, 56, 0.15);
+  --accent-text: #171717;
+  --green: #059669;
+  --green-dim: rgba(5, 150, 105, 0.12);
+  --amber: #d97706;
+  --amber-dim: rgba(217, 119, 6, 0.12);
+  --red: #dc2626;
+  --red-dim: rgba(220, 38, 38, 0.10);
+  --blue: #2563eb;
+  --glow: 0 0 80px rgba(199, 255, 56, 0.15);
+  --glow-sm: 0 0 24px rgba(199, 255, 56, 0.12);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-lg: 24px;
+  --font-display: 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+
+  /* Workspace theme — scoped to .workspace, does not affect the tokens above.
+     Dark is the only workspace theme (no light variant, no toggle). */
+  --ws-bg: #171717;
+  --ws-bg-1: #1f1f1f;
+  --ws-bg-2: #262626;
+  --ws-text: #F5F7F2;
+  --ws-text-2: #b5b5b5;
+  --ws-text-3: #7a7a7a;
+  --ws-border: #2e2e2e;
+  --ws-accent: #C7FF38;
+  --ws-accent-dim: rgba(199, 255, 56, 0.15);
+  --ws-accent-text: #171717;
+  --ws-red: #f87171;
+  --ws-red-dim: rgba(248, 113, 113, 0.15);
+  --ws-amber: #f59e0b;
+  --ws-amber-dim: rgba(245, 158, 11, 0.15);
+  --ws-radius: 12px;
+  --ws-sidebar-width: 240px;
+}
+
+.workspace {
+  background: var(--ws-bg);
+  color: var(--ws-text);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  /* clip (not hidden) — hidden establishes a scroll container, which breaks the
+     sidebar's position: sticky since it becomes the nearest scrolling ancestor
+     instead of the real viewport. clip still clamps horizontal overflow without
+     that side effect. */
+  max-width: 100%;
+  overflow-x: clip;
+}
+.workspace * {
+  font-family: inherit;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Wrapped in Tailwind's `base` layer (not left bare) so Tailwind utility
+   classes — which live in `@layer utilities`, declared after `base` — can
+   still override this reset. Unlayered CSS always wins over layered CSS
+   regardless of specificity, so leaving this bare silently zeroed out
+   every padding/margin utility class added after Fase 1. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* Unified button style */
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--accent-text);
+  border: none;
+  padding: 12px 28px;
+  border-radius: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+  transition: opacity 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn-primary:hover {
+  opacity: 0.9;
+  box-shadow: 0 0 24px rgba(199, 255, 56, 0.35);
+}
+.btn-secondary {
+  background: rgba(245, 247, 242, 0.05);
+  color: var(--text-2);
+  border: 1px solid rgba(245, 247, 242, 0.12);
+  padding: 12px 28px;
+  border-radius: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+  transition: border-color 0.2s, color 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn-secondary:hover {
+  border-color: rgba(199, 255, 56, 0.4);
+  color: var(--accent);
+}
+
+
+/* MarketStatusDot ping animation */
+@keyframes market-dot-ping {
+  0% { transform: scale(1); opacity: 0.6; }
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+/* Scroll reveal animation */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.reveal {
+  opacity: 0;
+}
+.reveal.visible {
+  animation: fadeUp 0.5s ease forwards;
+}
+.reveal:nth-child(2) { animation-delay: 0.08s; }
+.reveal:nth-child(3) { animation-delay: 0.16s; }
+.reveal:nth-child(4) { animation-delay: 0.24s; }
+
+/* Card base */
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+  border-color: var(--border-2);
+  box-shadow: var(--glow-sm);
+}
+
+/* Glass card — landing only */
+.glass {
+  background: rgba(245, 247, 242, 0.04);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(245, 247, 242, 0.08);
+  border-radius: 20px;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.glass:hover {
+  border-color: rgba(199, 255, 56, 0.3);
+  box-shadow: 0 0 40px rgba(199, 255, 56, 0.1), inset 0 1px 0 rgba(245,247,242,0.06);
+}
+.glass-strong {
+  background: rgba(245, 247, 242, 0.06);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(245, 247, 242, 0.1);
+  border-radius: 20px;
+  box-shadow: inset 0 1px 0 rgba(245,247,242,0.06);
+}
+
+/* Gradient text utility */
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Section divider glow */
+.section-glow {
+  position: relative;
+}
+.section-glow::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 600px;
+  height: 300px;
+  background: radial-gradient(ellipse, rgba(199, 255, 56, 0.1) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Topbar ─────────────────────────────────────────────── */
+:root {
+  --topbar-height: 49px;
+}
+
+.topbar {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  height: var(--topbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  background: rgba(17,17,17,0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 10;
+  gap: 12px;
+  font-family: 'Inter', sans-serif;
+}
+
+.topbar-logo {
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-family: 'Inter', sans-serif;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+  color: var(--text);
+}
+
+.topbar-search {
+  background: rgba(245, 247, 242, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  padding: 6px 14px;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.topbar-search::placeholder { color: var(--text-3); }
+.topbar-search:focus { border-color: var(--accent); }
+.topbar-search-mobile { width: 100%; font-size: 14px; padding: 7px 12px; }
+
+.topbar-discover {
+  background: rgba(199, 255, 56, 0.08);
+  border: 1px solid rgba(199, 255, 56, 0.25);
+  border-radius: 10px;
+  color: var(--accent);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.topbar-discover:hover { background: rgba(199, 255, 56, 0.16); }
+
+.topbar-nav-link {
+  color: var(--text-3);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  transition: color 0.15s;
+}
+.topbar-nav-link:hover,
+.topbar-nav-link.active { color: var(--accent); }
+.topbar-nav-link.active { font-weight: 700; }
+
+/* Suggestion dropdown */
+.suggestion-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 999;
+  margin-top: 4px;
+  box-shadow: 0 8px 32px rgba(15,23,42,0.12);
+}
+.suggestion-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'Inter', sans-serif;
+  transition: background 0.15s;
+}
+.suggestion-item:hover { background: var(--bg-2); }
+.suggestion-item:last-child { border-bottom: none; }
+.suggestion-ticker { color: var(--accent); font-size: 13px; font-weight: 700; min-width: 52px; flex-shrink: 0; }
+.suggestion-name   { color: var(--text-2); font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestion-exchange { color: var(--text-3); font-size: 11px; flex-shrink: 0; }
+
+/* Pro badge */
+.pro-badge {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-family: 'Inter', sans-serif;
+}
+
+/* Mobile menu overlay */
+.topbar-mobile-menu {
+  display: flex;
+  flex-direction: column;
+  background: rgba(17,17,17,0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: 9;
+}
+.topbar-mobile-link {
+  padding: 14px 20px;
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  font-family: 'Inter', sans-serif;
+  transition: color 0.15s;
+}
+.topbar-mobile-link:last-child { border-bottom: none; }
+.topbar-mobile-link:hover { color: var(--accent); }
+.topbar-mobile-link.active { color: var(--accent); font-weight: 700; }
+
+/* ─────────────────────────────────────────────────────────── */
+
+::selection {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-2); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* Mobile/desktop block switching — handled by CSS so it works without JS */
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-only {
+    display: block !important;
+  }
+  .desktop-only {
+    display: none !important;
+  }
+  .desktop-nav {
+    display: none !important;
+  }
+  .mobile-menu-btn {
+    display: none !important;
+  }
+  .mobile-menu {
+    display: none !important;
+  }
+  .bottom-nav {
+    display: block !important;
+  }
+  @media (orientation: portrait) {
+    .bottom-nav {
+      display: none !important;
+    }
+  }
+  body {
+    padding-bottom: 64px;
+  }
+  @media (orientation: portrait) {
+    body {
+      padding-bottom: 0 !important;
+    }
+  }
+  .watchlist-widget {
+    display: none !important;
+  }
+  .landing-feature-row {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+    padding: 36px 0 !important;
+  }
+  .landing-feature-text, .landing-feature-mockup {
+    order: initial !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-menu-btn {
+    display: none !important;
+  }
+  .mobile-menu {
+    display: none !important;
+  }
+}
+
+/* Stock page layout */
+.stock-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.stock-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: 0 1 320px;
+  min-width: 220px;
+}
+
+.stock-hero-chart {
+  flex: 1;
+  min-width: 160px;
+  padding-left: 24px;
+  border-left: 1px solid var(--ws-border);
+}
+
+.stock-hero-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-left: 24px;
+  border-left: 1px solid var(--ws-border);
+}
+
+.stock-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Quality Score / Analyst Consensus row on the Overview tab — side by side on desktop,
+   stacked below that. 1023px matches the same "not desktop" breakpoint the rest of the
+   workspace switches on (mobile header, collapsing sidebar, home dashboard grids). */
+@media (max-width: 1023px) {
+  .overview-pair {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .stock-hero {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .stock-hero-left {
+    /* In row layout the 320px flex-basis caps width; in the column layout .stock-hero
+       switches to on mobile, flex-basis instead sizes height, so without an explicit
+       width the name's ellipsis has nothing to clip against and overflows the screen. */
+    width: 100%;
+    min-width: 0;
+  }
+  .stock-tab-nav {
+    padding: 0 2px;
+  }
+  .stock-tab-nav button {
+    padding: 8px 12px !important;
+    font-size: 10px !important;
+  }
+  .stock-page-root {
+    padding: 12px !important;
+  }
+  .stock-hero-card {
+    padding: 16px !important;
+  }
+  /* Jump-to-ticker search + watchlist star wraps below the logo/name on narrow screens
+     (the row above already does that via flex-wrap) — stretch it full width there instead
+     of leaving it pinned to its natural content width. */
+  .stock-hero-search-row {
+    width: 100%;
+  }
+  /* KPI strip — 140px basis only fits one tile per row on a phone-width screen; 2-up reads
+     much better and every value here (market cap, yields, multiples) is short enough to fit. */
+  .stock-kpi-strip > div {
+    flex-basis: calc(50% - 1px) !important;
+  }
+  .stock-hero-chart {
+    border-left: none;
+    border-top: 1px solid var(--ws-border);
+    padding-left: 0;
+    padding-top: 16px;
+    width: 100%;
+  }
+  .stock-hero-score {
+    border-left: none;
+    border-top: 1px solid var(--ws-border);
+    padding-left: 0;
+    padding-top: 16px;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+  }
+  .stock-overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .grid-5 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .quality-score-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .grid-3 {
+    grid-template-columns: repeat(1, 1fr) !important;
+  }
+  .per-share-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .pricing-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .about-bento-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .about-bento-grid > div {
+    grid-column: span 1 !important;
+  }
+  .screener-filter-btn {
+    display: flex !important;
+  }
+  .screener-cards {
+    display: flex !important;
+  }
+
+  /* Stock page compact header - logo sizing on mobile */
+  .stock-logo img {
+    width: 36px !important;
+    height: 36px !important;
+  }
+}
+
+/* Portfolio grids default desktop styles */
+.portfolio-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.portfolio-allocations-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+/* Home Dashboard Widget Adaptations */
+.home-portfolio-summary {
+  grid-template-columns: repeat(3, 1fr);
+}
+.home-portfolio-summary-item {
+  padding: 12px 14px;
+}
+.home-portfolio-summary-item:not(:last-child) {
+  border-right: 1px solid var(--ws-border);
+}
+
+/* Every widget card clips its own content at its own boundary — a safety net so
+   no single widget (a wide table, an unwrapped row, the marquee tape, etc.) can
+   push the page wider than the viewport. Cards that need their own horizontal
+   scroll (holdings tables) already wrap that in an inner overflowX:auto div,
+   which still scrolls fine nested inside this. */
+.widget-card {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Grid items default to a content-based automatic minimum size, so a single wide
+   widget (e.g. Coverage Workspace's 9-column table) can force its whole column
+   track wider than the viewport at any column count (2-col, 3-col) — not just
+   the mobile 1-col layout. Since .workspace clips overflow-x, that excess width
+   was being cut off invisibly instead of scrolling. Applies at every breakpoint. */
+.home-main-grid,
+.home-main-grid > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Home dashboard's custom grid collapses below 1023px (mobile/tablet layout) */
+@media (max-width: 1023px) {
+  .home-main-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .home-main-grid > div {
+    padding: 0 !important;
+  }
+  .portfolio-overview-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .portfolio-allocations-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .home-container {
+    padding: 12px !important;
+    gap: 16px !important;
+  }
+  .widget-card-header {
+    padding: 10px 12px !important;
+  }
+  .widget-card-body table th,
+  .widget-card-body table td {
+    padding: 8px 10px !important;
+  }
+  .home-portfolio-summary {
+    grid-template-columns: 1fr !important;
+  }
+  .home-portfolio-summary-item:not(:last-child) {
+    border-right: none !important;
+    border-bottom: 1px solid var(--ws-border);
+  }
+}
+
+@media (max-width: 480px) {
+  .home-container {
+    padding: 8px !important;
+    gap: 12px !important;
+  }
+  .widget-card-body table th,
+  .widget-card-body table td {
+    padding: 6px 8px !important;
+  }
+  .home-portfolio-summary-item {
+    padding: 8px 10px !important;
+  }
+  .widget-indices-grid {
+    padding: 10px !important;
+    gap: 8px !important;
+  }
+  .widget-sotw-body {
+    padding: 12px !important;
+  }
+  .sotw-teaser-stats {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .widget-portfolio-body {
+    padding: 10px !important;
+    gap: 10px !important;
+  }
+  .home-portfolio-trade-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .home-marquee-container {
+    gap: 12px !important;
+    padding: 8px 0 8px 12px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Landing hero */
+  .hero-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .hero-title {
+    font-size: 36px !important;
+  }
+  /* Landing sections */
+  .how-it-works-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .framework-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .market-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .rankings-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .stats-bar {
+    gap: 16px !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+  }
+  /* Home page redesign — stats/features/methodology teaser/pricing grids */
+  .home-stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .home-stats-grid > div {
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+  }
+  .home-stats-grid > div:first-child {
+    border-top: none !important;
+  }
+  .home-features-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .method-teaser-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 28px !important;
+  }
+  .home-pricing-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Responsive scrollable table utilities */
+.responsive-table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.responsive-table {
+  width: 100%;
+  min-width: 950px;
+  border-collapse: collapse;
+}
+.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  border-right: 1px solid var(--ws-border) !important;
+}
+th.sticky-col {
+  background: var(--ws-bg-1) !important;
+  z-index: 6;
+}
+td.sticky-col {
+  background: var(--ws-bg-1) !important;
+}
+tr:hover td.sticky-col {
+  background: var(--ws-bg-2) !important;
+}
+
+/* Screener Filters responsive drawer styles */
+.screener-filters-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--ws-border);
+  background: var(--ws-bg-2);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@media (max-width: 1023px) {
+  .screener-filters-sidebar {
+    position: fixed !important;
+    top: 48px !important; /* height of mobile topbar */
+    bottom: 0 !important;
+    left: -240px !important;
+    z-index: 100 !important;
+    box-shadow: 10px 0 30px rgba(0,0,0,0.15) !important;
+  }
+  .screener-filters-sidebar.open {
+    transform: translateX(240px) !important;
+  }
+}
+
+.screener-filters-backdrop {
+  position: fixed;
+  inset: 48px 0 0 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(1.5px);
+  z-index: 99;
+}
+
+.mobile-filters-toggle-btn {
+  display: none !important;
+}
+@media (max-width: 1023px) {
+  .mobile-filters-toggle-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+/* Market Radar Spotlight Panel Drawer styles */
+.radar-spotlight-panel {
+  width: 360px;
+  flex-shrink: 0;
+  background: var(--ws-bg-1);
+  border-left: 1px solid var(--ws-border);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  height: calc(100vh - var(--topbar-height));
+  box-sizing: border-box;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@media (max-width: 1023px) {
+  .radar-spotlight-panel {
+    position: fixed !important;
+    top: 48px !important; /* height of mobile topbar */
+    bottom: 0 !important;
+    right: -360px !important;
+    z-index: 100 !important;
+    height: auto !important;
+    box-shadow: -10px 0 30px rgba(0,0,0,0.15) !important;
+  }
+  .radar-spotlight-panel.open {
+    transform: translateX(-360px) !important;
+  }
+}
+
+.radar-spotlight-backdrop {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .radar-spotlight-backdrop {
+    display: block;
+    position: fixed;
+    inset: 48px 0 0 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(1.5px);
+    z-index: 99;
+  }
+}
+
+/* Home Page Customize Dashboard Layout Config Panel Styles */
+.home-config-popup-wrapper {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  padding-bottom: 8px;
+  width: 280px;
+  z-index: 100;
+  transform-origin: bottom right;
+  animation: fadeInSlideUp 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.home-config-popup {
+  background: var(--ws-bg-1);
+  border: 1px solid var(--ws-border);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.home-config-popup-col-1 {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.home-config-popup-col-2 {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.home-config-popup-widgets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+@media (max-width: 1023px) {
+  .home-config-popup-wrapper {
+    width: 460px !important;
+  }
+  .home-config-popup {
+    flex-direction: row !important;
+    gap: 20px !important;
+  }
+  .home-config-popup-col-1 {
+    flex: 1 !important;
+  }
+  .home-config-popup-col-2 {
+    flex: 1.2 !important;
+    border-left: 1px solid var(--ws-border) !important;
+    padding-left: 20px !important;
+  }
+  .home-config-popup-widgets-list {
+    max-height: 120px !important;
+  }
+}
+
+/* Workspace Sidebar and Header responsive layout */
+.ws-mobile-header {
+  height: 48px;
+  background: var(--ws-bg-1);
+  border-bottom: 1px solid var(--ws-border);
+  display: none;
+  align-items: center;
+  padding: 0 16px;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+@media (max-width: 1023px) {
+  .ws-mobile-header {
+    display: flex;
+  }
+  .ws-sidebar-slot {
+    position: fixed;
+    left: -240px;
+    top: 0;
+    bottom: 0;
+    height: 100vh;
+    z-index: 9999;
+    transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    display: block;
+  }
+  .ws-sidebar-slot.open {
+    left: 0;
+  }
+}
+
+/* Standard Workspace UI classes */
+.ws-card {
+  background: var(--ws-bg-1);
+  border: 1px solid var(--ws-border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.01);
+}
+
+.ws-label {
+  font-size: 10px;
+  color: var(--ws-text-3);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.ws-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--ws-bg-2);
+  border: 1px solid var(--ws-border);
+  color: var(--ws-text);
+  outline: none;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.ws-btn {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--ws-accent);
+  border: none;
+  color: var(--accent-text);
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.20s;
+}
+.ws-btn:hover {
+  opacity: 0.85;
+}
+.ws-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ws-btn-secondary {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  background: none;
+  border: 1px solid var(--ws-border);
+  color: var(--ws-text);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.ws-btn-secondary:hover {
+  border-color: var(--ws-accent);
+  color: var(--ws-accent);
+}
+
+.ws-btn-danger {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--ws-red);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.20s;
+}
+.ws-btn-danger:hover {
+  opacity: 0.85;
+}
+
+/* Blue Gem reveal (Quality Score hero) — bar strains against its own 100% ceiling, then
+   breaks. Amplitude escalates across the animation instead of a flat shake, so it reads as
+   "building tension" rather than idle vibration. */
+@keyframes gem-escalate-shake {
+  0%, 100% { transform: translateX(0); }
+  8% { transform: translateX(-0.5px); }
+  16% { transform: translateX(0.5px); }
+  24% { transform: translateX(-0.8px); }
+  32% { transform: translateX(0.8px); }
+  40% { transform: translateX(-1.4px); }
+  48% { transform: translateX(1.4px); }
+  56% { transform: translateX(-2.2px); }
+  64% { transform: translateX(2.2px); }
+  72% { transform: translateX(-3.2px); }
+  80% { transform: translateX(3.2px); }
+  88% { transform: translateX(-4.5px); }
+  96% { transform: translateX(4.5px); }
+}
+@keyframes gem-glow-pulse {
+  0% { transform: scale(0.3); opacity: 0; }
+  40% { transform: scale(1.7); opacity: 0.9; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+@keyframes gem-shine {
+  0% { transform: translateX(-40px) rotate(20deg); }
+  100% { transform: translateX(180px) rotate(20deg); }
+}
+

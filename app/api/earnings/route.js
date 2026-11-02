@@ -1,0 +1,300 @@
+import { fetchNasdaqEarningsRange } from '../../../lib/nasdaqEarnings';
+import { supabase } from '../../../lib/supabase';
+import { computeEasyMode } from '../../../lib/stockScoring';
+
+const FH_KEY = process.env.FINNHUB_API_KEY;
+
+export const dynamic = 'force-dynamic';
+
+// Finnhub's calendar/earnings returns epsActual/epsEstimate but no surprise figure —
+// callers (calendar timeline, stock page "next earnings" card) want a beat/miss % to
+// color the badge the same up-is-green/down-is-red way as the Quality/Financials tabs.
+function surprisePercent(actual, estimate) {
+  if (actual == null || estimate == null || !estimate) return null;
+  return +(((actual - estimate) / Math.abs(estimate)) * 100).toFixed(1);
+}
+
+// Every request (page load, month/week navigation, watchlist toggle) previously re-fetched
+// Finnhub + Nasdaq (one request per day in range) + Supabase from scratch, with nothing
+// shared across users or repeat visits — a short in-memory cache keyed by the exact query
+// string cuts that down to one real fetch per [from, to] window per TTL window.
+const CACHE_TTL_MS = 90_000;
+const cache = new Map(); // queryString -> { data, cachedAt }
+const CACHE_MAX_ENTRIES = 300;
+
+function getCached(key) {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.cachedAt < CACHE_TTL_MS) return hit.data;
+  return null;
+}
+function setCached(key, data) {
+  cache.set(key, { data, cachedAt: Date.now() });
+  if (cache.size > CACHE_MAX_ENTRIES) {
+    cache.delete(cache.keys().next().value); // evict oldest (Map preserves insertion order)
+  }
+}
+
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const cacheKey = searchParams.toString();
+    const cached = getCached(cacheKey);
+    if (cached) return Response.json(cached);
+    const today = new Date();
+    const ticker = searchParams.get('ticker')?.toUpperCase();
+
+    if (ticker) {
+      const from = searchParams.get('from') || new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const to = searchParams.get('to') || new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      const fhRawRes = await fetch(`https://finnhub.io/api/v1/calendar/earnings?symbol=${ticker}&from=${from}&to=${to}&token=${FH_KEY}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      });
+      const fhRes = await fhRawRes.json().catch(() => ({}));
+
+      // A rate-limited/unauthorized/plan-restricted Finnhub response silently degraded to
+      // "no earnings" before — `(fhRes.earningsCalendar || [])` can't tell an empty calendar
+      // apart from a failed request. Logging the raw failure here at least makes that
+      // distinguishable server-side (check Vercel logs) instead of looking identical to a
+      // ticker that genuinely has no upcoming earnings date on file.
+      const fhFailed = !fhRawRes.ok || !!fhRes.error;
+      if (fhFailed) {
+        console.error(`[earnings] Finnhub calendar/earnings failed for symbol=${ticker}: status=${fhRawRes.status} body=${JSON.stringify(fhRes).slice(0, 300)}`);
+      }
+
+      let earnings = (fhRes.earningsCalendar || [])
+        .filter(e => e.symbol === ticker && e.date)
+        .map(e => ({
+          ticker: e.symbol,
+          date: e.date,
+          epsEstimate: e.epsEstimate,
+          epsActual: e.epsActual,
+          revenueEstimate: e.revenueEstimate,
+          revenueActual: e.revenueActual,
+          surprisePercent: surprisePercent(e.epsActual, e.epsEstimate),
+          hour: e.hour,
+        }));
+
+      // Finnhub's calendar has thin coverage for foreign private issuers (20-F filers like
+      // Nokia) — confirmed empty (not an error) doesn't mean no date exists, just that
+      // Finnhub doesn't have it. Nasdaq's public calendar often does; fall back to it only
+      // when Finnhub genuinely came back clean-but-empty, not on a Finnhub failure (retrying
+      // against a different provider on every rate-limit would just add load).
+      // `source: 'nasdaq'` lives on the earnings item itself (not the response envelope)
+      // since the frontend reads it straight off whichever entry it picks as "upcoming event".
+      if (earnings.length === 0 && !fhFailed) {
+        const nasdaqMatches = (await fetchNasdaqEarningsRange(from, to))
+          .filter(e => e.ticker === ticker)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        if (nasdaqMatches[0]) earnings = [nasdaqMatches[0]];
+      }
+
+      // Surfaced only on a genuine upstream failure (bad/rate-limited key, plan restriction,
+      // etc.) so hitting this URL directly distinguishes "Finnhub errored" from "Finnhub
+      // returned zero events for this ticker" — the two used to look identical.
+      const result = fhFailed
+        ? { earnings, debug: { finnhubStatus: fhRawRes.status, finnhubError: fhRes.error || null } }
+        : { earnings };
+      if (!fhFailed) setCached(cacheKey, result); // don't cache a transient upstream failure
+      return Response.json(result);
+    }
+
+    const from = searchParams.get('from') || today.toISOString().slice(0, 10);
+    const to = searchParams.get('to') || new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const fromDate = new Date(from + 'T00:00:00');
+    const toDate = new Date(to + 'T00:00:00');
+    const diffTime = Math.abs(toDate - fromDate);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    let earningsPromises = [];
+    if (diffDays > 10) {
+      // Chunk the date range into 7-day intervals to bypass Finnhub's 1500-result limit
+      const chunks = [];
+      let currentStart = new Date(fromDate);
+      while (currentStart <= toDate) {
+        let currentEnd = new Date(currentStart);
+        currentEnd.setDate(currentStart.getDate() + 6); // 7 days inclusive
+        if (currentEnd > toDate) {
+          currentEnd = new Date(toDate);
+        }
+        
+        const formatDate = (d) => {
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+        
+        chunks.push({
+          from: formatDate(currentStart),
+          to: formatDate(currentEnd)
+        });
+        
+        currentStart.setDate(currentStart.getDate() + 7);
+      }
+
+      earningsPromises = chunks.map(chunk =>
+        fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${chunk.from}&to=${chunk.to}&token=${FH_KEY}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        })
+        .then(async r => {
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok || d.error) console.error(`[earnings] Finnhub calendar/earnings failed for ${chunk.from}..${chunk.to}: status=${r.status} body=${JSON.stringify(d).slice(0, 300)}`);
+          return d.earningsCalendar || [];
+        })
+        .catch(() => [])
+      );
+    } else {
+      earningsPromises = [
+        fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FH_KEY}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        })
+        .then(async r => {
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok || d.error) console.error(`[earnings] Finnhub calendar/earnings failed for ${from}..${to}: status=${r.status} body=${JSON.stringify(d).slice(0, 300)}`);
+          return d.earningsCalendar || [];
+        })
+        .catch(() => [])
+      ];
+    }
+
+    // Nasdaq fallback used to run as a separate `await` *after* this Promise.all resolved —
+    // its full latency (one request per day in range, batched 10 at a time) stacked on top of
+    // Finnhub's instead of overlapping with it. Same [from, to] window, no dependency on
+    // Finnhub's result, so it belongs in the same Promise.all.
+    const [earningsResults, ipoRes, nasdaqEarnings] = await Promise.all([
+      Promise.all(earningsPromises).then(results => results.flat()),
+      fetch(`https://finnhub.io/api/v1/calendar/ipo?from=${from}&to=${to}&token=${FH_KEY}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      }).then(r => r.json()).catch(() => ({})),
+      fetchNasdaqEarningsRange(from, to),
+    ]);
+
+    // Previously restricted to tickers already present in stock_cache ("covered" companies) —
+    // that silently dropped real earnings dates for any ticker nobody had viewed/cached yet
+    // (e.g. NOK's own July earnings never showed up because no one had opened /stock/NOK
+    // recently). Clicking an event still routes to /stock/[ticker], which fetches fresh data
+    // on a cache miss, so there's no reason to gate the calendar on caching state.
+    const seen = new Set();
+    const coveredTickers = new Set();
+    const earnings = [];
+    for (const e of earningsResults) {
+      if (e.symbol && e.date) {
+        const key = `${e.symbol}-${e.date}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          coveredTickers.add(e.symbol);
+          earnings.push({
+            ticker: e.symbol,
+            date: e.date,
+            epsEstimate: e.epsEstimate,
+            epsActual: e.epsActual,
+            revenueEstimate: e.revenueEstimate,
+            revenueActual: e.revenueActual,
+            surprisePercent: surprisePercent(e.epsActual, e.epsEstimate),
+            hour: e.hour,
+          });
+        }
+      }
+    }
+
+    const ipos = (ipoRes.ipoCalendar || [])
+      .filter(e => e.symbol && e.date)
+      .map(e => ({
+        ticker: e.symbol,
+        date: e.date,
+        name: e.name,
+        exchange: e.exchange,
+        price: e.price,
+        numberOfShares: e.numberOfShares,
+      }));
+
+    // Same Finnhub-coverage gap as the per-ticker branch above (thin coverage for foreign
+    // private issuers like Nokia) — unlike the old Yahoo fallback, which was per-ticker and
+    // had to be limited to the caller's watchlist to bound latency, this covers every ticker
+    // reporting in the window for roughly the same cost (fetched above, in parallel with
+    // Finnhub).
+    //
+    // Gated on coveredTickers rather than the exact ticker-date `seen` key: Nasdaq's calendar
+    // often lists an estimated date that differs from Finnhub's confirmed one for the same
+    // report, so a date-only dedup let both through as separate entries — the same ticker
+    // showing up twice on different days (verified against real data: DVLT listed on both
+    // Aug 17, from Finnhub, and Aug 18 "Est. date", from Nasdaq). Nasdaq is meant to fill
+    // coverage gaps, not add a second date for a ticker already covered — including by an
+    // earlier day's Nasdaq result within the same window.
+    for (const e of nasdaqEarnings) {
+      const key = `${e.ticker}-${e.date}`;
+      if (!seen.has(key) && !coveredTickers.has(e.ticker)) {
+        seen.add(key);
+        coveredTickers.add(e.ticker);
+        earnings.push(e);
+      }
+    }
+
+    // Enrich with market cap and sector from stock_cache
+    const allTickers = new Set([
+      ...earnings.map(e => e.ticker),
+      ...ipos.map(i => i.ticker)
+    ].filter(Boolean));
+
+    const tickerArray = Array.from(allTickers);
+    const enrichmentMap = {};
+
+    // Chunks queried concurrently instead of one-at-a-time — independent lookups (no chunk
+    // depends on another's result), so there's no reason to pay N sequential round trips to
+    // Supabase when N parallel ones finish in roughly the time of the slowest single one.
+    const CHUNK_SIZE = 100;
+    const chunks = [];
+    for (let i = 0; i < tickerArray.length; i += CHUNK_SIZE) chunks.push(tickerArray.slice(i, i + CHUNK_SIZE));
+
+    // Full cached `data` blob (not just marketCap/sector sub-fields) so computeEasyMode below
+    // has what it needs to score each ticker — same JSON shape /api/stock returns, since this
+    // is exactly what that route caches.
+    const chunkResults = await Promise.all(chunks.map(chunk =>
+      supabase.from('stock_cache').select('ticker, data').in('ticker', chunk)
+    ));
+    chunkResults.forEach(({ data }) => {
+      if (!data) return;
+      data.forEach(row => {
+        const d = row.data || {};
+        // Same hasFundamentals check the stock page itself uses (page.js's own
+        // computeEasyMode call), so a ticker with too little data to score gets a null
+        // qualityScore100 here exactly like it would show "N/A" there.
+        const hasFundamentals = d.revVal != null || d.niVal != null || d.marketCap != null
+          || d.roic != null || d.grossMargin != null || (d.revHistory?.length ?? 0) > 0;
+        const easy = computeEasyMode(d, hasFundamentals);
+        enrichmentMap[row.ticker] = {
+          name: d.name ?? null,
+          marketCap: d.marketCap ?? null,
+          sector: d.sector ?? null,
+          qualityScore100: easy?.score100 ?? null,
+        };
+      });
+    });
+
+    const enrichedEarnings = earnings.map(e => ({
+      ...e,
+      // Finnhub/Nasdaq's earnings feed doesn't always carry a company name — stock_cache's
+      // own cached name (same source /api/stock uses) fills the gap.
+      name: e.name || enrichmentMap[e.ticker]?.name || null,
+      marketCap: enrichmentMap[e.ticker]?.marketCap || null,
+      sector: enrichmentMap[e.ticker]?.sector || null,
+      qualityScore100: enrichmentMap[e.ticker]?.qualityScore100 ?? null,
+    }));
+
+    const enrichedIpos = ipos.map(i => ({
+      ...i,
+      name: i.name || enrichmentMap[i.ticker]?.name || null,
+      marketCap: enrichmentMap[i.ticker]?.marketCap || null,
+      sector: enrichmentMap[i.ticker]?.sector || null,
+      qualityScore100: enrichmentMap[i.ticker]?.qualityScore100 ?? null,
+    }));
+
+    const result = { earnings: enrichedEarnings, ipos: enrichedIpos };
+    setCached(cacheKey, result);
+    return Response.json(result);
+  } catch (e) {
+    return Response.json({ earnings: [] });
+  }
+}
